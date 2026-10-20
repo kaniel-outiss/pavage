@@ -1,0 +1,46 @@
+name: Build APK
+on:
+  push:
+  workflow_dispatch:
+permissions:
+  contents: write
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: 17
+      - name: Préparer www
+        run: mkdir -p www && cp app.html www/index.html
+      - run: npm install
+      - run: npx cap add android
+      - run: npx cap sync android
+      - name: Clé de signature fixe (mises à jour sans désinstaller)
+        run: |
+          cp keys/pavage.keystore android/app/pavage.keystore
+          printf '\nandroid {\n  signingConfigs { pv { storeFile file("pavage.keystore"); storePassword "android"; keyAlias "androiddebugkey"; keyPassword "android" } }\n  buildTypes { debug { signingConfig signingConfigs.pv } }\n}\n' >> android/app/build.gradle
+      - name: Numéro de version croissant
+        run: |
+          VER=$(node -p "require('./package.json').version")
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/; s/versionName \"[^\"]*\"/versionName \"$VER\"/" android/app/build.gradle
+          grep -n "version" android/app/build.gradle
+      - name: Compiler
+        run: cd android && chmod +x gradlew && ./gradlew assembleDebug
+      - name: Renommer
+        run: cp android/app/build/outputs/apk/debug/app-debug.apk pavage.apk
+      - uses: actions/upload-artifact@v4
+        with:
+          name: pavage.apk
+          path: pavage.apk
+      - name: Publier en Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: build-${{ github.run_number }}
+          name: Pavage build ${{ github.run_number }}
+          files: pavage.apk

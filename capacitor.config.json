@@ -1,0 +1,6 @@
+{
+  "appId": "com.pianotools.pavage",
+  "appName": "Pavage",
+  "webDir": "www",
+  "server": { "androidScheme": "https" }
+}
