@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
-<meta name="app-version" content="1.0.2">
+<meta name="app-version" content="1.0.3">
 </head><body>
 <title>Pavage de la cour</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -207,6 +207,9 @@ body{padding-block:0;overflow:hidden}
 .toolbar .lab{font:600 .72rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .toolbar .sepv{width:1px;align-self:stretch;background:var(--line)}
 .addbtn{flex:none;white-space:nowrap}
+.joinbox{position:absolute;left:8px;right:8px;bottom:8px;max-width:520px;margin:0 auto;background:var(--panel);border:2px solid var(--accent);border-radius:6px;padding:12px;display:grid;gap:8px;z-index:6;box-shadow:0 8px 24px color-mix(in srgb,var(--ink) 25%,transparent)}
+.joinbox p{margin:0}
+.addpop[hidden],.joinbox[hidden]{display:none}
 .addpop{position:absolute;left:8px;top:8px;width:min(360px,calc(100% - 16px));max-height:calc(100% - 16px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;display:grid;gap:10px;box-shadow:0 8px 24px color-mix(in srgb,var(--ink) 25%,transparent);z-index:5}
 .addgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
 .addgrid .tool{justify-content:flex-start;padding:10px;font-size:.92rem}
@@ -276,6 +279,7 @@ body{padding-block:0;overflow:hidden}
             <button id="zFit" class="wide">Ajuster</button>
           </div>
           <div id="msg" aria-live="polite"></div>
+          <div class="joinbox" id="joinBox" hidden></div>
           <div class="addpop" id="addPop" hidden>
             <div class="prow" style="justify-content:space-between"><span class="eyebrow">Nouvelle forme</span><button class="btn sm" id="addClose" aria-label="Fermer">×</button></div>
             <span class="seg" role="group" aria-label="Nature de la forme">
@@ -942,6 +946,9 @@ function draw(){
   h+=angLab;
   if(U.tool==="erase")for(const b of BUILT){if(b.err||!STRAIGHT.includes(b.s.type)||b.verts.length>40)continue;
     b.verts.forEach((p,i)=>h+=hd(p[0],p[1],`data-ev="${b.s.id}|${i}"`,"er",5))}
+  /* aperçu de l'accolement proposé */
+  if(U.joinProp){const P=U.joinProp,b=S.shapes.find(x=>x.id===P.move);if(b){const g=clone(b);moveShape(g,0,0,P.dRot,P.pivot);moveShape(g,P.dx,P.dy,0);const gb=build(g);
+    if(!gb.err)h+=`<path d="${pathOf(gb.loop)}Z" style="fill:var(--accent);fill-opacity:.25;stroke:var(--accent)" stroke-dasharray="${6*px} ${4*px}" stroke-width="${2.5*px}" pointer-events="none"/>`}}
   /* inférences */
   const I=U.inf;
   if(I&&I.kind){const c=INFC[I.kind]||"var(--accent)";
@@ -1460,13 +1467,50 @@ function cleanRing(r){let P=r.slice(0,-1).map(p=>[r9(p[0]),r9(p[1])]);
   let changed=true;while(changed&&P.length>3){changed=false;for(let i=0;i<P.length;i++){const a=P[(i-1+P.length)%P.length],p=P[i],c=P[(i+1)%P.length];
     const cr=(p[0]-a[0])*(c[1]-a[1])-(p[1]-a[1])*(c[0]-a[0]),l=dist(a,c);if(Math.abs(cr)<=1e-9*Math.max(1,l*l)){P.splice(i,1);changed=true;break}}}
   return P}
-function unify(){
+/* accolement automatique : repère les côtés presque alignés de deux surfaces proches et calcule le déplacement qui les colle */
+function moveShape(s,dx,dy,dRot,pivot){if(dRot){const lp=Tf(s).I(pivot);s.rot=norm(n(s.rot)+dRot);const w=Tf(s).T(lp);s.x=n(s.x)+pivot[0]-w[0];s.y=n(s.y)+pivot[1]-w[1]}
+  s.x=n(s.x)+dx;s.y=n(s.y)+dy}
+function proposeJoin(sa,sb){const A=build(sa),B0=build(sb);if(A.err||B0.err)return null;
+  const MAXG=1.5,unit=v=>{const l=Math.hypot(v[0],v[1]);return[v[0]/l,v[1]/l]};let best=null;
+  for(const eA of A.edges){if(eA.kind!=="L")continue;const lenA=dist(eA.A,eA.B);if(lenA<0.05)continue;const dA=unit(sub(eA.B,eA.A)),nA=[dA[1],-dA[0]];
+    for(const eB0 of B0.edges){if(eB0.kind!=="L"||dist(eB0.A,eB0.B)<0.05)continue;const dB=unit(sub(eB0.B,eB0.A));
+      let dRot=(Math.atan2(dA[1],dA[0])-Math.atan2(dB[1],dB[0]))/DEG;dRot=((dRot%180)+270)%180-90;if(Math.abs(dRot)>6)continue;
+      const pivot=[(eB0.A[0]+eB0.B[0])/2,(eB0.A[1]+eB0.B[1])/2],tmp=clone(sb);moveShape(tmp,0,0,dRot,pivot);
+      const B=build(tmp),eB=B.edges.find(x=>x.k===eB0.k),off=(eB.A[0]-eA.A[0])*nA[0]+(eB.A[1]-eA.A[1])*nA[1];
+      if(Math.abs(off)>MAXG)continue;
+      /* le côté de B doit faire face à celui de A (B à l'extérieur de A) */
+      const cB=[(B.bb[0]+B.bb[2])/2,(B.bb[1]+B.bb[3])/2],side=(cB[0]-eA.A[0])*nA[0]+(cB[1]-eA.A[1])*nA[1];if(side<0)continue;
+      const pr=q=>(q[0]-eA.A[0])*dA[0]+(q[1]-eA.A[1])*dA[1],b0=pr(eB.A),b1=pr(eB.B),lo=Math.min(b0,b1),hi=Math.max(b0,b1),ov=Math.min(hi,lenA)-Math.max(lo,0);
+      if(ov<0.05)continue;
+      let sh=0,bestS=0.35;for(const a of [0,lenA])for(const b of [b0,b1]){const d=a-b;if(Math.abs(d)<bestS){bestS=Math.abs(d);sh=d}}
+      const dx=-off*nA[0]+sh*dA[0],dy=-off*nA[1]+sh*dA[1],score=Math.abs(off)+Math.abs(sh)*0.5+Math.abs(dRot)*0.02;
+      if(!best||score<best.score)best={score,fixed:sa.id,move:sb.id,dx,dy,dRot,pivot,gap:off,shift:sh,len:Math.min(ov,lenA)}}}
+  return best}
+function renderJoin(){const P=U.joinProp,box=$("joinBox");if(!P){box.hidden=true;box.innerHTML="";return}
+  const a=S.shapes.find(x=>x.id===P.fixed),b=S.shapes.find(x=>x.id===P.move);if(!a||!b){U.joinProp=null;box.hidden=true;return}
+  const cm=x=>Math.abs(x*100).toLocaleString("fr-FR",{maximumFractionDigits:1})+" cm",parts=[];
+  if(Math.abs(P.gap)>0.0005)parts.push(`${P.gap>0?"écart":"chevauchement"} de ${cm(P.gap)}`);
+  if(Math.abs(P.shift)>0.0005)parts.push(`décalage de ${cm(P.shift)} le long du côté`);
+  if(Math.abs(P.dRot)>0.01)parts.push(`angle de ${Math.abs(P.dRot).toLocaleString("fr-FR",{maximumFractionDigits:2})}°`);
+  box.hidden=false;box.innerHTML=`<div class="eyebrow">Accolement automatique</div>
+    <p>« ${esc(b.name.replace(/^Exemple — /,""))} » et « ${esc(a.name.replace(/^Exemple — /,""))} » ne sont pas exactement jointives : ${parts.join(", ")||"contact imparfait"}.</p>
+    <p class="hint">L'aperçu en pointillés montre la position corrigée : le côté de ${f2(P.len)} m sera collé exactement, coins alignés.</p>
+    <div class="prow"><button class="btn primary" data-jn="ok">Coller et unifier</button><button class="btn" data-jn="asis">Unifier sans corriger</button><button class="btn" data-jn="no">Annuler</button></div>`}
+function applyJoin(andUnify){const P=U.joinProp;if(!P)return;const b=S.shapes.find(x=>x.id===P.move);U.joinProp=null;renderJoin();if(!b)return;
+  moveShape(b,0,0,P.dRot,P.pivot);moveShape(b,P.dx,P.dy,0);recompute();
+  if(andUnify){U.multi=new Set([P.fixed,P.move]);unify();if(U.tool==="edit"){const ns=S.shapes.find(x=>U.multi.has(x.id));U.multi.clear();if(ns)selectShape(ns.id)}}
+  else{commit();renderPanel();say("Surfaces collées")}}
+function unify(asIs){
   if(!PC){say("Module de fusion non chargé");return}
   const list=S.shapes.filter(s=>U.multi.has(s.id)),bl=list.map(build).filter(b=>!b.err);
   if(bl.length<2){say("Choisissez au moins deux surfaces complètes");return}
   if(list.some(s=>s.sign!==list[0].sign)){say("Unifiez des surfaces de même nature (toutes à paver ou toutes à déduire)");return}
+  if(list.length===2&&!asIs){const pr=proposeJoin(list[0],list[1]);
+    if(pr&&(Math.abs(pr.gap)>0.0005||Math.abs(pr.shift)>0.0005||Math.abs(pr.dRot)>0.01)){U.joinProp=pr;draw();renderJoin();return}}
   let u=null;for(const b of bl){const ring=b.loop.map(p=>[r9(p[0]),r9(p[1])]);ring.push(ring[0]);u=u?PC.union(u,[[ring]]):[[ring]]}
-  if(u.length!==1){say("Ces surfaces ne se touchent pas : rapprochez-les ou accolez-les d'abord");return}
+  if(u.length!==1){
+    if(list.length===2&&asIs){say("Ces surfaces ne se touchent pas : utilisez « Coller et unifier »");return}
+    say(list.length===2?"Ces surfaces sont trop éloignées (plus de 1,5 m) : rapprochez-les d'abord":"Ces surfaces ne se touchent pas : unifiez-les deux par deux");return}
   const[outer,...holes]=u[0],P=cleanRing(outer);
   let x0=Infinity,y0=Infinity;P.forEach(p=>{x0=Math.min(x0,p[0]);y0=Math.min(y0,p[1])});
   const first=list[0],idx=Math.min(...list.map(s=>S.shapes.indexOf(s)));
@@ -2120,6 +2164,10 @@ tools.addEventListener("click",ev=>{
 function setAddPop(o){$("addPop").hidden=!o;$("addMenuBtn").setAttribute("aria-expanded",o)}
 $("addMenuBtn").onclick=()=>{if(U.tool!=="edit")setTool("edit");setAddPop($("addPop").hidden)};
 $("addClose").onclick=()=>setAddPop(false);
+$("joinBox").addEventListener("click",ev=>{const b=ev.target.closest("[data-jn]");if(!b)return;const a=b.dataset.jn;
+  if(a==="no"){U.joinProp=null;renderJoin();draw();return}
+  if(a==="asis"){const P=U.joinProp;U.joinProp=null;renderJoin();U.multi=new Set([P.fixed,P.move]);unify(true);if(U.tool==="edit"){const ns=S.shapes.find(x=>U.multi.has(x.id));U.multi.clear();if(ns)selectShape(ns.id)}return}
+  applyJoin(true)});
 $("mPlus").onclick=()=>{U.newSign=1;$("mPlus").setAttribute("aria-pressed","true");$("mMinus").setAttribute("aria-pressed","false")};
 $("mMinus").onclick=()=>{U.newSign=-1;$("mPlus").setAttribute("aria-pressed","false");$("mMinus").setAttribute("aria-pressed","true")};
 $("list").addEventListener("click",ev=>{const b=ev.target.closest("[data-pick]");if(!b)return;const id=b.dataset.pick;
