@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
-<meta name="app-version" content="1.0.0">
+<meta name="app-version" content="1.0.1">
 </head><body>
 <title>Pavage de la cour</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -206,6 +206,11 @@ body{padding-block:0;overflow:hidden}
 .toolbar .tgroup{display:flex;gap:6px;align-items:center}
 .toolbar .lab{font:600 .72rem var(--body);letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
 .toolbar .sepv{width:1px;align-self:stretch;background:var(--line)}
+.addbtn{flex:none;white-space:nowrap}
+.addpop{position:absolute;left:8px;top:8px;width:min(360px,calc(100% - 16px));max-height:calc(100% - 16px);overflow:auto;background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:12px;display:grid;gap:10px;box-shadow:0 8px 24px color-mix(in srgb,var(--ink) 25%,transparent);z-index:5}
+.addgrid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:6px}
+.addgrid .tool{justify-content:flex-start;padding:10px;font-size:.92rem}
+.addpop .tool svg,.addgrid .tool svg{width:26px;height:20px;flex:none}
 .planwrap{flex:1;min-height:0;display:grid;grid-template-columns:minmax(0,1fr) 350px;gap:10px}
 .planwrap .canvas{height:100%;min-height:0}
 .side{overflow:auto;min-height:0;display:grid;gap:10px;align-content:start}
@@ -242,6 +247,7 @@ body{padding-block:0;overflow:hidden}
   <main class="tpwrap">
     <section class="tp tp-plan" data-tp="plan">
       <div class="toolbar">
+        <button class="btn primary addbtn" id="addMenuBtn" aria-expanded="false" aria-controls="addPop">+ Nouvelle forme</button>
         <span class="seg" role="group" aria-label="Outil">
           <button class="n" data-tool="edit" aria-pressed="true">Modifier</button>
           <button class="n" data-tool="select" aria-pressed="false">Sélection</button>
@@ -257,16 +263,6 @@ body{padding-block:0;overflow:hidden}
           <button class="n" data-deform="trap" aria-pressed="false">Trapèze</button>
           <button class="n" data-deform="free" aria-pressed="false">Libre</button>
         </span>
-        <span class="sepv"></span>
-        <span class="tgroup" id="tools">
-          <span class="lab">Ajouter</span>
-          <span class="seg" role="group" aria-label="Nouvelle forme">
-            <button class="p" id="mPlus" aria-pressed="true">+ À paver</button>
-            <button class="m" id="mMinus" aria-pressed="false">− À déduire</button>
-          </span>
-        </span>
-        <button class="tool" id="addNote"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M4 3H16M10 3V14" stroke="currentColor" stroke-width="2" fill="none"/></svg>Texte</button>
-        <button class="tool" id="addDrain"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M10 2C10 2 4 8 4 11A6 6 0 0 0 16 11C16 8 10 2 10 2Z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>Point bas</button>
       </div>
       <div class="planwrap">
         <div class="canvas" id="cv">
@@ -280,6 +276,19 @@ body{padding-block:0;overflow:hidden}
             <button id="zFit" class="wide">Ajuster</button>
           </div>
           <div id="msg" aria-live="polite"></div>
+          <div class="addpop" id="addPop" hidden>
+            <div class="prow" style="justify-content:space-between"><span class="eyebrow">Nouvelle forme</span><button class="btn sm" id="addClose" aria-label="Fermer">×</button></div>
+            <span class="seg" role="group" aria-label="Nature de la forme">
+              <button class="p" id="mPlus" aria-pressed="true">+ À paver</button>
+              <button class="m" id="mMinus" aria-pressed="false">− À déduire</button>
+            </span>
+            <div class="addgrid" id="tools"></div>
+            <div class="addgrid">
+              <button class="tool" id="addNote"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M4 3H16M10 3V14" stroke="currentColor" stroke-width="2" fill="none"/></svg>Texte</button>
+              <button class="tool" id="addDrain"><svg viewBox="0 0 20 16" aria-hidden="true"><path d="M10 2C10 2 4 8 4 11A6 6 0 0 0 16 11C16 8 10 2 10 2Z" stroke="currentColor" stroke-width="1.6" fill="none"/></svg>Point bas</button>
+            </div>
+            <p class="hint">La forme apparaît au centre du plan, ou à côté de la forme sélectionnée. Faites-la glisser, ou touchez un de ses côtés pour l'accoler.</p>
+          </div>
         </div>
         <div class="side">
           <div id="layersPanel"></div>
@@ -2083,9 +2092,9 @@ document.querySelectorAll("[data-deform]").forEach(b=>b.onclick=()=>{U.deform=b.
   document.querySelectorAll("[data-deform]").forEach(x=>x.setAttribute("aria-pressed",x===b));
   say({keep:"Les formes gardent leur nature",trap:"Un angle tiré glisse le long de son côté : le rectangle devient trapèze",free:"Les angles bougent librement : la forme devient un polygone"}[U.deform])});
 $("undo").onclick=undo;$("redo").onclick=redo;
-$("addDrain").onclick=()=>{const[W,H2]=dims();if(!S.drain)S.drain={x:r6(view.x+W/2/view.s),y:r6(view.y+H2/2/view.s),slope:1.5};S.vis.slope=true;
+$("addDrain").onclick=()=>{setAddPop(false);const[W,H2]=dims();if(!S.drain)S.drain={x:r6(view.x+W/2/view.s),y:r6(view.y+H2/2/view.s),slope:1.5};S.vis.slope=true;
   if(U.tool!=="edit")setTool("edit");U.drainSel=true;U.sel=null;U.edge=null;draw();updateDevis();save();renderPanel();say("Faites glisser le point bas à l'endroit de l'évacuation")};
-$("addNote").onclick=()=>{const[W,H2]=dims();const t={id:uid(),text:"Texte",x:r6(view.x+W/2/view.s),y:r6(view.y+H2/2/view.s),size:Math.max(0.2,r6(16/view.s)),color:"",bold:false};
+$("addNote").onclick=()=>{setAddPop(false);const[W,H2]=dims();const t={id:uid(),text:"Texte",x:r6(view.x+W/2/view.s),y:r6(view.y+H2/2/view.s),size:Math.max(0.2,r6(16/view.s)),color:"",bold:false};
   S.notes.push(t);if(U.tool!=="edit")setTool("edit");U.note=t.id;U.sel=null;U.edge=null;draw();save();renderPanel();const e=$("n-text");if(e){e.focus();e.select()}};
 const tools=$("tools");
 tools.insertAdjacentHTML("beforeend",ADD.map(([k,l])=>`<button class="tool" data-add="${k}"><svg viewBox="0 0 20 16" aria-hidden="true">${ICON[k]}</svg>${l}</button>`).join(""));
@@ -2098,8 +2107,11 @@ tools.addEventListener("click",ev=>{
   if(ref&&!ref.err){s.x=r6(ref.bb[2]+1);s.y=r6(ref.bb[1])}
   else{const[W,H2]=dims();s.x=r6(view.x+W/2/view.s-2);s.y=r6(view.y+H2/2/view.s-2)}
   S.shapes.push(s);if(U.tool!=="edit")setTool("edit");selectShape(s.id);recompute();renderPanel();
-  say("Faites glisser la forme, ou touchez un côté pour l'accoler");
+  setAddPop(false);say("Faites glisser la forme, ou touchez un côté pour l'accoler");
 });
+function setAddPop(o){$("addPop").hidden=!o;$("addMenuBtn").setAttribute("aria-expanded",o)}
+$("addMenuBtn").onclick=()=>{if(U.tool!=="edit")setTool("edit");setAddPop($("addPop").hidden)};
+$("addClose").onclick=()=>setAddPop(false);
 $("mPlus").onclick=()=>{U.newSign=1;$("mPlus").setAttribute("aria-pressed","true");$("mMinus").setAttribute("aria-pressed","false")};
 $("mMinus").onclick=()=>{U.newSign=-1;$("mPlus").setAttribute("aria-pressed","false");$("mMinus").setAttribute("aria-pressed","true")};
 $("list").addEventListener("click",ev=>{const b=ev.target.closest("[data-pick]");if(!b)return;const id=b.dataset.pick;
