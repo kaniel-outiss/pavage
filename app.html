@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="fr"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
 <style>:root{color-scheme:light;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}body{margin:0;font:14px system-ui,sans-serif}img{max-width:100%}[hidden]{display:none!important}</style>
-<meta name="app-version" content="1.0.1">
+<meta name="app-version" content="1.0.2">
 </head><body>
 <title>Pavage de la cour</title>
 <meta name="claude:viewport-fit-sides" content="cover">
@@ -1193,7 +1193,9 @@ function renderPanel(){
     <label>Couleur<input type="color" id="n-color" data-n="color" value="${col(t.color)&&t.color.length===7?t.color:"#1d2421"}"></label>
     <label class="chk"><input type="checkbox" id="n-bold" data-n="bold"${t.bold?" checked":""}>Gras</label></div>
     <div class="prow"><button class="btn sm danger" data-act="notedel">Supprimer le texte</button></div></div>`;return}
-  if(U.snap){const s=S.shapes.find(x=>x.id===U.snap.sid);
+  if(U.unifyFrom){const s=S.shapes.find(x=>x.id===U.unifyFrom);
+    h+=`<div class="panel banner"><div class="prow"><span>Touchez la surface à fusionner avec « ${esc(s?s.name:"")} ».</span><button class="btn sm" data-act="unifycancel">Annuler</button></div></div>`}
+  else if(U.snap){const s=S.shapes.find(x=>x.id===U.snap.sid);
     h+=`<div class="panel banner"><div class="prow"><span>Touchez maintenant le côté de la forme voisine contre lequel coller « ${esc(s?s.name:"")} ».</span>
       <button class="btn sm" data-act="snapcancel">Annuler</button></div></div>`}
   else if(U.last){h+=`<div class="panel banner"><div class="prow"><span>Formes accolées. Glisser le long du côté :</span>
@@ -1242,6 +1244,7 @@ function renderPanel(){
         <button class="btn sm" data-act="rot" data-v="15">↻ 15°</button><button class="btn sm" data-act="rot" data-v="90">↻ 90°</button>
         <button class="btn sm" data-act="flip">Retourner</button>
         ${STRAIGHT.includes(s.type)&&s.type!=="poly"?`<button class="btn sm" data-act="topoly">Convertir en polygone</button>`:""}
+        <button class="btn sm primary" data-act="unifystart">Unifier avec une autre surface</button>
       </div>
       ${(()=>{const nr=nearRight(b);return nr.length?`<div class="prow"><span class="warn">${nr.length} coin${nr.length>1?"s":""} presque droit${nr.length>1?"s":""} (${nr.map(c=>(c.interior/DEG).toLocaleString("fr-FR",{maximumFractionDigits:1})+"°").join(", ")}) : erreur de mesure probable.</span><button class="btn sm primary" data-act="square">Redresser à 90°</button></div>`:""})()}
       <div class="prow" style="justify-content:space-between">
@@ -1303,6 +1306,8 @@ panel.addEventListener("click",ev=>{
   const b=ev.target.closest("button[data-act]");if(!b)return;const s=cur(),a=b.dataset.act;
   if(a==="tooledit"){setTool("edit");return}
   if(a==="unify"){unify();return}
+  if(a==="unifycancel"){U.unifyFrom=null;renderPanel();return}
+  if(a==="unifystart"&&s){U.unifyFrom=s.id;U.edge=null;U.angle=null;U.vsel=null;renderPanel();say("Touchez la surface voisine à fusionner");return}
   if(a==="wallfromedge"&&s){const e=curEdge();if(!e)return;S.walls.push(newWall({name:"Mur — "+s.name.replace(/^Exemple — /,"")+", côté "+(e.k+1),len:rnd(e.len)}));save();commit();renderWalls();updateDevis();
     setMainTab("walls");return}
   if(a==="calibok"){applyCalib(n(($("calibVal")||{}).value));return}
@@ -1541,7 +1546,8 @@ svg.addEventListener("pointerdown",ev=>{
     pan={x0:ev.clientX,y0:ev.clientY,vx:view.x,vy:view.y};return}
   /* sélection multiple */
   if(U.tool==="select"){const sh=tg.closest("[data-sid]");
-    if(sh){const id=sh.dataset.sid;U.multi.has(id)?U.multi.delete(id):U.multi.add(id);draw();renderList();renderPanel();return}
+    if(sh){const id=sh.dataset.sid,now=Date.now();if(U.lastTog&&U.lastTog.id===id&&now-U.lastTog.t<450)return;U.lastTog={id,t:now};
+      U.multi.has(id)?U.multi.delete(id):U.multi.add(id);draw();renderList();renderPanel();say(`${U.multi.size} surface${U.multi.size>1?"s":""} sélectionnée${U.multi.size>1?"s":""}`);return}
     pan={x0:ev.clientX,y0:ev.clientY,vx:view.x,vy:view.y,tapClear:true};return}
   /* modifier */
   const ag=tg.closest("[data-ang]");
@@ -1560,6 +1566,8 @@ svg.addEventListener("pointerdown",ev=>{
   const nt=tg.closest("[data-note]");
   if(nt){const t=S.notes.find(x=>x.id===nt.dataset.note);U.note=t.id;U.sel=null;U.edge=null;draw();renderList();renderPanel();ndrag={t,x0:ev.clientX,y0:ev.clientY,tx:t.x,ty:t.y};busy=true;return}
   const el=tg.closest("[data-sid]");
+  if(el&&U.unifyFrom){const id=el.dataset.sid;if(id===U.unifyFrom){say("Touchez une autre surface");return}
+    U.multi=new Set([U.unifyFrom,id]);U.unifyFrom=null;unify();const ns=S.shapes.find(x=>U.multi.has(x.id));U.multi.clear();if(ns)selectShape(ns.id);return}
   if(el&&el.dataset.edge!=null){
     const hit={sid:el.dataset.sid,k:+el.dataset.edge};
     if(U.snap){if(hit.sid===U.snap.sid){say("Choisissez un côté d'une autre forme");return}
@@ -2085,7 +2093,7 @@ $("dvMats").addEventListener("toggle",ev=>{const d=ev.target;if(!d.dataset||!d.d
 
 /* ---------- barre d'outils ---------- */
 function setTool(t){U.tool=t;document.querySelectorAll("[data-tool]").forEach(b=>b.setAttribute("aria-pressed",b.dataset.tool===t));
-  U.snap=null;U.edge=null;U.last=null;U.vcb=null;U.note=null;U.meas=null;U.drainSel=false;if(t!=="select")U.multi.clear();if(t==="select"&&U.sel)U.multi.add(U.sel);
+  U.snap=null;U.edge=null;U.last=null;U.vcb=null;U.note=null;U.meas=null;U.drainSel=false;U.unifyFrom=null;if(t!=="select")U.multi.clear();if(t==="select"&&U.sel)U.multi.add(U.sel);
   draw();renderList();renderPanel()}
 document.querySelectorAll("[data-tool]").forEach(b=>b.onclick=()=>setTool(b.dataset.tool));
 document.querySelectorAll("[data-deform]").forEach(b=>b.onclick=()=>{U.deform=b.dataset.deform;
